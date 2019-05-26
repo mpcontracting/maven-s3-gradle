@@ -1,0 +1,69 @@
+import com.amazonaws.auth.AWSStaticCredentialsProvider
+import com.amazonaws.auth.BasicAWSCredentials
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
+import com.amazonaws.auth.STSAssumeRoleSessionCredentialsProvider
+import com.amazonaws.auth.profile.internal.BasicProfileConfigLoader
+import com.amazonaws.profile.path.AwsProfileFileLocationProvider
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.amazonaws:aws-java-sdk-sts:1.11.560'
+    }
+}
+
+repositories.ext.mavenS3 = { s3Url ->
+    repositories.maven {
+        url "$s3Url"
+        credentials(AwsCredentials) {
+            def credentialsProvider
+            def roleArn
+            def region
+            def awsProfile
+
+            try {
+                awsProfile = BasicProfileConfigLoader.INSTANCE.loadProfiles((File)AwsProfileFileLocationProvider.DEFAULT_CONFIG_LOCATION_PROVIDER.getLocation()).getProfiles()
+                        .values().stream()
+                        .filter({ profile -> profile.getProfileName().replaceAll('^profile ', '') == 'default' })
+                        .findFirst()
+                        .orElse(null)
+            } catch (Exception e) {}
+
+            if (awsProfile == null) {
+                // We're probably on Circle, fall back to the default credentials provider and deploy role
+                credentialsProvider = new DefaultAWSCredentialsProviderChain()
+                roleArn = 'arn:aws:iam::234988710888:role/deploy-role-dev-deploy-Role'
+                region = 'eu-west-1'
+            } else {
+                // Get the source profile for the credentials
+                def sourceProfile = BasicProfileConfigLoader.INSTANCE.loadProfiles((File)AwsProfileFileLocationProvider.DEFAULT_CREDENTIALS_LOCATION_PROVIDER.getLocation()).getProfiles()
+                        .get(awsProfile.getRoleSourceProfile())
+
+                credentialsProvider = new AWSStaticCredentialsProvider(new BasicAWSCredentials(
+                        sourceProfile.getAwsAccessIdKey(), sourceProfile.getAwsSecretAccessKey()
+                ))
+                roleArn = awsProfile.getRoleArn();
+                region = awsProfile.getRegion() != null ? awsProfile.getRegion() : 'eu-west-1'
+            }
+
+            def awsSecurityTokenService = AWSSecurityTokenServiceClientBuilder.standard()
+                    .withCredentials(credentialsProvider)
+                    .withRegion(region)
+                    .build()
+            def sessionCredentialsProvider = new STSAssumeRoleSessionCredentialsProvider.Builder(
+                    roleArn,
+                    'gradle-session')
+                    .withStsClient(awsSecurityTokenService)
+                    .build()
+            def awsSessionCredentials = sessionCredentialsProvider.getCredentials()
+
+            accessKey = awsSessionCredentials.getAWSAccessKeyId()
+            secretKey = awsSessionCredentials.getAWSSecretKey()
+            sessionToken = awsSessionCredentials.getSessionToken()
+        }
+    }
+}
