@@ -28,7 +28,7 @@ repositories.ext.mavenS3 = { s3Url ->
             try {
                 awsProfile = BasicProfileConfigLoader.INSTANCE.loadProfiles((File)AwsProfileFileLocationProvider.DEFAULT_CONFIG_LOCATION_PROVIDER.getLocation()).getProfiles()
                         .values().stream()
-                        .filter({ profile -> profile.getProfileName().replaceAll('^profile ', '') == 'default' })
+                        .filter({ profile -> profile.getProfileName().replaceAll('^profile ', '') == 'deploy-role' })
                         .findFirst()
                         .orElse(null)
             } catch (Exception e) {}
@@ -36,7 +36,7 @@ repositories.ext.mavenS3 = { s3Url ->
             if (awsProfile == null) {
                 // We're probably on Circle, fall back to the default credentials provider and deploy role
                 credentialsProvider = new DefaultAWSCredentialsProviderChain()
-                roleArn = 'arn:aws:iam::234988710888:role/deploy-role-dev-deploy-Role'
+                roleArn = 'arn:aws:iam::070972128850:role/deploy-role'
                 region = 'eu-west-1'
             } else {
                 // Get the source profile for the credentials
